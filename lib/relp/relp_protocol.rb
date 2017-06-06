@@ -1,4 +1,5 @@
 require '../lib/relp/exceptions'
+require 'socket'
 module Relp
 
   class RelpProtocol
@@ -7,7 +8,7 @@ module Relp
 
     def frame_write(socket, frame)
       frame[:txnr] = frame[:txnr].to_s
-      frame[:message] = '' if frame[:message].nil?
+      frame[:message] = frame[:message]
       frame[:frame_length] = frame[:message].length.to_s
 
       raw_data=[
@@ -26,18 +27,20 @@ module Relp
       return frame[:txnr].to_i
     end
 
-    def frame_read(socket)#TODO extract version commands and relp software
+    def frame_read(socket)
       begin
         socket_content = socket.read
         frame = Hash.new
         if match = socket_content.match(/(^[0-9]+) ([\S]*) (\d+) ([\s\S]*)/)
           frame[:txnr], frame[:command], frame[:data_length], frame[:message] = match.captures
+        else
+          raise raise Relp::FrameReadException.new('Problem with reading RELP frame')
         end
         @logger.debug("Read frame", :frame => frame)
       rescue Errno::ECONNRESET
         raise Relp::ConnectionClosed.new('Connection closed')
       rescue EOFError,IOError
-        raise Relp::FrameReadException
+        raise Relp::FrameReadException.new('Problem with reading RELP frame')
       end
       is_valid_command(frame[:command])
 
@@ -45,10 +48,14 @@ module Relp
     end
 
     def is_valid_command(command)
-      valid_commands = Array.new
-      if !valid_commands = ["open", "close", "rsp", "syslog"].include?(command)
+      valid_commands = ["open", "close", "rsp", "syslog"]
+      if !valid_commands.include?(command)
         raise Relp::InvalidCommand.new('Invalid command')
       end
     end
+  end
+
+  def find_relp_version(message)
+
   end
 end

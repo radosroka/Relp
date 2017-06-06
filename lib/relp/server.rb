@@ -1,12 +1,10 @@
-require 'socket'
-require 'relp_protocol'
-
-
 module Relp
   class RelpServer < RelpProtocol
 
-    def initialize(port)
+    def initialize(port, required_commands=[])
       @logger = Logger.new(STDOUT)
+
+      @required_commands = required_commands
 
       begin
         @server = TCPServer.new port
@@ -21,7 +19,25 @@ module Relp
           :command => command,
           :message => message
       }
-      Relp::frame_write(socket,response_frame)
+      Relp::frame_write(socket,frame)
+    end
+
+    def ack(socket, txnr)
+      frame = {:txnr => txnr,
+           :command => 'rsp',
+           :message => '200 OK'
+      }
+      frame_write(socket, frame)
+    end
+
+    def server_close(socket)
+      frame = {:txnr => 0,
+               :command => "serverclose"
+      }
+      begin
+        Relp::frame_write(socket,frame)
+        socket.close
+      end
     end
 
     def accept_connection
@@ -38,12 +54,12 @@ module Relp
           server_close(socket)
           raise Relp::ConnectionRefused
         else
-          response_frame = create_frame(socket,frame['txnr'], "rsp", "200 OK" + 'relp_version=' + @relp_version + "\n" 'relp_software=' + @relp_software + "\n")
+          response_frame = create_frame(socket,frame[:txnr], "rsp", "200 OK" + 'relp_version=' + @relp_version + "\n" 'relp_software=' + @relp_software)
         end
       elsif frame[:command] == 'syslog'
         return frame
       elsif frame[:command] == 'close'
-        response_frame = create_frame(socket,frame[:txnr], "rsp", "200 OK" + "\n")
+        response_frame = create_frame(socket,frame[:txnr], "rsp", "200 OK")
         Relp::frame_write(socket,response_frame)
         server_close(socket)
         raise Relp::ConnectionClosed
@@ -54,15 +70,6 @@ module Relp
     end
 
 
-    def server_close(socket)
-      frame = {:txnr => 0,
-               :command => "serverclose"
-      }
-      begin
-        Relp::frame_write(socket,frame)
-        socket.close
-      end
-    end
 
     def close_connection
       @server.close
